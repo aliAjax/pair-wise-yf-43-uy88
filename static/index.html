@@ -5,30 +5,242 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>实验室仪器校准与方法验证</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem; color: #1f2937; }
-    main { max-width: 820px; margin: auto; }
-    pre { background: #f3f4f6; padding: 1rem; border-radius: 8px; overflow-x: auto; }
-    button { padding: .5rem .8rem; cursor: pointer; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 1.5rem; color: #1f2937; background: #f9fafb; }
+    main { max-width: 1080px; margin: auto; }
+    section { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+    h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 0; }
+    table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+    th, td { border: 1px solid #e5e7eb; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; }
+    input, select, button, textarea { font: inherit; padding: .35rem .5rem; margin: .15rem .25rem .15rem 0; }
+    button { cursor: pointer; border-radius: 6px; border: 1px solid #9ca3af; background: #fff; }
+    button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .tag { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .75rem; }
+    .tag.ok { background: #dcfce7; color: #166534; }
+    .tag.bad { background: #fee2e2; color: #991b1b; }
+    .tag.warn { background: #fef9c3; color: #854d0e; }
+    .tag.muted { background: #f3f4f6; color: #4b5563; }
+    pre { background: #f3f4f6; padding: .75rem; border-radius: 8px; overflow-x: auto; font-size: .8rem; max-height: 320px; }
+    .row { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: flex-end; }
+    .field label { display: block; font-size: .75rem; color: #6b7280; }
+    #msg { white-space: pre-wrap; }
   </style>
 </head>
 <body>
 <main>
   <h1>实验室仪器校准与方法验证</h1>
-  <p>这是最小演示页面。使用浏览器或 curl 调用 JSON API。</p>
-  <p><button onclick="checkHealth()">检查服务状态</button></p>
-  <pre id="result">等待操作</pre>
-  <h2>常用接口</h2>
-  <pre>GET  /health
-GET  /api/&lt;kind&gt;
-POST /api/&lt;kind&gt;
-GET  /api/entities/&lt;id&gt;
-POST /api/entities/&lt;id&gt;/actions</pre>
+  <p>
+    <button onclick="refresh()">刷新数据</button>
+    <button onclick="checkHealth()">检查服务状态</button>
+    <span class="field"><label>当前身份</label>
+      <select id="role" onchange="refresh()">
+        <option value="admin">admin</option>
+        <option value="metrology">metrology 计量</option>
+        <option value="authorizer">authorizer 授权</option>
+        <option value="analyst">analyst 分析员</option>
+        <option value="technician">technician</option>
+        <option value="viewer">viewer</option>
+      </select>
+    </span>
+  </p>
+
+  <section>
+    <h2>仪器与已登记校准点</h2>
+    <div id="instruments"></div>
+    <h3>新建仪器</h3>
+    <div class="row">
+      <span class="field"><label>名称</label><input id="inst-name" value="Analyzer"></span>
+      <span class="field"><label>序列号</label><input id="inst-serial" value="A-1"></span>
+      <button class="primary" onclick="createInstrument()">创建仪器</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>送检校准（逐点登记标准值/示值/扩展不确定度/到期日）</h2>
+    <div class="row">
+      <span class="field"><label>仪器</label><select id="cal-inst"></select></span>
+      <span class="field"><label>校准点（JSON 数组）</label>
+        <textarea id="cal-points" rows="5" cols="90">[
+  {"standard_value": 0, "indicated_value": 0, "expanded_uncertainty": 0.01, "due_at": "2099-01-01"},
+  {"standard_value": 10, "indicated_value": 10.2, "expanded_uncertainty": 0.03, "due_at": "2099-01-01"}
+]</textarea>
+      </span>
+    </div>
+    <button class="primary" onclick="sendCalibration()">送检 → 执行 → 批准</button>
+  </section>
+
+  <section>
+    <h2>方法</h2>
+    <div id="methods"></div>
+    <div class="row">
+      <span class="field"><label>名称</label><input id="m-name" value="Assay-A"></span>
+      <span class="field"><label>版本</label><input id="m-version" value="v1"></span>
+      <span class="field"><label>适用仪器</label><select id="m-inst"></select></span>
+      <button class="primary" onclick="createMethod()">创建并验证方法</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>检测结果放行（仅允许落在两个已校准点之间）</h2>
+    <div class="row">
+      <span class="field"><label>样品</label><input id="r-sample" value="S-1"></span>
+      <span class="field"><label>仪器</label><select id="r-inst"></select></span>
+      <span class="field"><label>方法</label><select id="r-method"></select></span>
+      <span class="field"><label>测得值</label><input id="r-value" value="5.1"></span>
+      <span class="field"><label>单位</label><input id="r-unit" value="mg/L"></span>
+      <span class="field"><label>测量日期(可选)</label><input id="r-date" placeholder="默认今天"></span>
+      <button class="primary" onclick="releaseResult()">送检结果并尝试放行</button>
+    </div>
+    <div id="results" style="margin-top:1rem"></div>
+  </section>
+
+  <section>
+    <h2>最近响应 / 错误</h2>
+    <pre id="msg">等待操作</pre>
+  </section>
 </main>
 <script>
-async function checkHealth() {
-  const response = await fetch('/health');
-  document.getElementById('result').textContent = JSON.stringify(await response.json(), null, 2);
+const state = {instruments: [], calibrations: [], methods: [], results: []};
+
+function headers(extra) {
+  return Object.assign({'Content-Type': 'application/json', 'X-User-Id': 'web', 'X-Role': document.getElementById('role').value}, extra || {});
 }
+async function api(path, opts) {
+  const response = await fetch(path, opts);
+  const data = await response.json();
+  if (!response.ok) throw new Error((data.type || 'Error') + ': ' + data.error);
+  return data;
+}
+function show(value) { document.getElementById('msg').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); }
+function esc(value) { return String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function tag(status) {
+  const ok = ['active', 'approved', 'validated', 'released'];
+  const warn = ['pending', 'requested', 'passed', 'calibrating', 'draft'];
+  const cls = ok.includes(status) ? 'ok' : warn.includes(status) ? 'warn' : 'bad';
+  return `<span class="tag ${cls}">${esc(status)}</span>`;
+}
+function today() { return new Date().toISOString().slice(0, 10); }
+function expired(point) { return point.due_at < today(); }
+
+async function checkHealth() { show(await api('/health')); }
+
+async function createInstrument() {
+  try {
+    await api('/api/instrument', {method: 'POST', headers: headers(), body: JSON.stringify({
+      name: document.getElementById('inst-name').value, serial: document.getElementById('inst-serial').value})});
+    await refresh();
+  } catch (e) { show(e.message); }
+}
+
+async function sendCalibration() {
+  try {
+    const instrumentId = document.getElementById('cal-inst').value;
+    let points;
+    try { points = JSON.parse(document.getElementById('cal-points').value); }
+    catch (e) { return show('校准点 JSON 解析失败: ' + e.message); }
+    const cal = await api('/api/calibration', {method: 'POST', headers: headers(),
+      body: JSON.stringify({instrument_id: instrumentId, requested_at: today()})});
+    const performed = await api('/api/entities/' + cal.id + '/actions', {method: 'POST', headers: headers(),
+      body: JSON.stringify({action: 'perform', data: {result: 'passed', performed_at: today(), points}})});
+    const approved = await api('/api/entities/' + cal.id + '/actions', {method: 'POST', headers: headers(),
+      body: JSON.stringify({action: 'approve', data: {authorized_by: 'web-qa'}})});
+    show(approved);
+    await refresh();
+  } catch (e) { show(e.message); }
+}
+
+async function createMethod() {
+  try {
+    const instrumentId = document.getElementById('m-inst').value;
+    const method = await api('/api/method', {method: 'POST', headers: headers(), body: JSON.stringify({
+      name: document.getElementById('m-name').value, version: document.getElementById('m-version').value})});
+    const validated = await api('/api/entities/' + method.id + '/actions', {method: 'POST', headers: headers(),
+      body: JSON.stringify({action: 'validate_method', data: {parameters: {range: [0, 10]}, instrument_ids: [instrumentId]}})});
+    show(validated);
+    await refresh();
+  } catch (e) { show(e.message); }
+}
+
+async function releaseResult() {
+  try {
+    const instrumentId = document.getElementById('r-inst').value;
+    const methodId = document.getElementById('r-method').value;
+    const measuredAt = document.getElementById('r-date').value;
+    const result = await api('/api/result', {method: 'POST', headers: headers(), body: JSON.stringify({
+      sample_id: document.getElementById('r-sample').value, measurement: 'initial'})});
+    const data = {
+      instrument_id: instrumentId, method_id: methodId,
+      value: Number(document.getElementById('r-value').value),
+      unit: document.getElementById('r-unit').value
+    };
+    if (measuredAt) data.measured_at = measuredAt;
+    const updated = await api('/api/entities/' + result.id + '/actions', {method: 'POST', headers: headers(),
+      body: JSON.stringify({action: 'release', data})});
+    show(updated);
+    await refresh();
+  } catch (e) { show(e.message); }
+}
+
+function fillSelect(id, items, labelFn) {
+  const select = document.getElementById(id);
+  const value = select.value;
+  select.innerHTML = items.map((item, i) => `<option value="${esc(item.id)}">${esc(labelFn(item, i))}</option>`).join('');
+  if (items.some(item => item.id === value)) select.value = value;
+}
+
+function renderInstruments() {
+  document.getElementById('instruments').innerHTML = state.instruments.map(inst => {
+    const points = inst.data.calibration_points || [];
+    const rows = points.map(p => `<tr>
+      <td class="${expired(p) ? 'tag bad' : 'tag ok'}">${expired(p) ? '已过期' : '有效'}</td>
+      <td>${esc(p.standard_value)}</td><td>${esc(p.indicated_value)}</td>
+      <td>${esc(p.expanded_uncertainty)}</td><td>${esc(p.due_at)}</td>
+      <td>${esc((p.calibration_id || '').slice(0, 8))}</td><td>${esc(p.registered_at || '')}</td></tr>`).join('');
+    const table = points.length ? `<table><thead><tr><th>状态</th><th>标准值</th><th>示值</th><th>扩展不确定度</th><th>到期日</th><th>校准记录</th><th>登记时间</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<p>（尚无已批准的校准点，至少需要两个点才能放行结果）</p>';
+    return `<p><strong>${esc(inst.data.name)}</strong> ${esc(inst.data.serial)} ${tag(inst.status)} <code>${esc(inst.id)}</code> 到期 ${esc(inst.data.due_at || '—')}</p>${table}`;
+  }).join('') || '<p>无仪器</p>';
+}
+
+function renderMethods() {
+  document.getElementById('methods').innerHTML = '<table><tbody>' + state.methods.map(m =>
+    `<tr><td>${esc(m.data.name)} ${esc(m.data.version)}</td><td>${tag(m.status)}</td><td><code>${esc(m.id)}</code></td></tr>`).join('') + '</tbody></table>';
+}
+
+function renderResults() {
+  document.getElementById('results').innerHTML = state.results.map(r => {
+    const d = r.data;
+    let detail = '';
+    if (r.status === 'released') {
+      const pts = (d.calibration_points || []).map(p =>
+        `标准值 ${p.standard_value} / 示值 ${p.indicated_value} / U ${p.expanded_uncertainty} / 到期 ${p.due_at}`).join('<br>');
+      detail = `<div class="tag ok">已放行</div>
+        <p>原始值 <strong>${esc(d.raw_value)}</strong> ${esc(d.unit)}；修正量 <strong>${esc(d.correction)}</strong>；修正后 <strong>${esc(d.corrected_value)}</strong>；扩展不确定度 ${esc(d.expanded_uncertainty)}</p>
+        <p>采用校准点：<br>${pts}</p>`;
+    } else if (d.reason) {
+      detail = `<div class="tag warn">待处理（pending）</div><p>原因：${esc(d.reason)}</p><p>检查日期：${esc(d.release_checked_at)}</p>`;
+    } else {
+      detail = `<div class="tag muted">${esc(r.status)}</div>`;
+    }
+    return `<p><strong>${esc(d.sample_id)}</strong> <code>${esc(r.id.slice(0,8))}</code></p>${detail}`;
+  }).join('') || '<p>无检测结果</p>';
+}
+
+async function refresh() {
+  try {
+    const [inst, cals, methods, results] = await Promise.all([
+      api('/api/instrument'), api('/api/calibration'), api('/api/method'), api('/api/result')]);
+    state.instruments = inst.items; state.calibrations = cals.items;
+    state.methods = methods.items; state.results = results.items;
+    const instLabel = i => `${i.data.name} ${i.data.serial} (${i.status})`;
+    fillSelect('cal-inst', state.instruments, instLabel);
+    fillSelect('m-inst', state.instruments, instLabel);
+    fillSelect('r-inst', state.instruments, instLabel);
+    fillSelect('r-method', state.methods, m => `${m.data.name} ${m.data.version} (${m.status})`);
+    renderInstruments(); renderMethods(); renderResults();
+  } catch (e) { show(e.message); }
+}
+refresh();
 </script>
 </body>
 </html>

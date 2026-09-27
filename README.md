@@ -26,6 +26,30 @@ python3 app.py --db ./data.db --port 8309
 
 - `instrument`：仪器状态；`calibration`：校准记录；`method`：方法版本；`result`：检测结果。
 
+## 校准点登记
+
+校准不再只保存一个合格结论。校准执行（`perform`，result=passed）时必须逐点登记 `points`，每个点包含：
+
+- `standard_value`：标准值
+- `indicated_value`：仪器示值
+- `expanded_uncertainty`：扩展不确定度
+- `due_at`：该点到期日（ISO 日期）
+
+校准批准（`approve`）后，这些点追加登记到仪器的 `data.calibration_points`，并记录来源校准记录和登记时间。旧点不会被删除或覆盖，重复送检保留全部历史点（同一示值存在多点时优先使用有效且最新的点）。
+
+## 结果放行
+
+`release` 不再直接使用示值。只有当测得值 `value` 落在两个当前有效（未过期）的已校准示值点之间时才放行，并在结果中返回：
+
+- `raw_value`：原始值
+- `correction`：修正量（相邻两点对标准值做线性插值得出）
+- `corrected_value`：修正后数值（原始值 + 修正量）
+- `expanded_uncertainty`：采用的扩展不确定度（两点取大）
+- `calibration_points`：实际采用的两个校准点
+- `release_checked_at`：判定使用的日期（默认当天，也可在动作数据中传 `measured_at`）
+
+有效点不足两个、测得值超出覆盖区间、或包围该值的校准点已过期时，结果**保持 `pending`**，不抛异常，并在数据中写入 `reason`（同时在审计时间线中以 `deferred` 记录）。可以继续用 `block`/`reanalyze` 处理，或补齐校准后重新 `release`。
+
 ## 主要接口
 
 - `GET /health`：健康检查。
