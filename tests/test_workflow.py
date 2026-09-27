@@ -32,7 +32,7 @@ class WorkflowTest(unittest.TestCase):
 
     def test_full_workflow(self):
         created = {}
-        steps = [{'op': 'create', 'as': 'instrument', 'kind': 'instrument', 'data': {'name': 'Analyzer', 'serial': 'A-1'}}, {'op': 'transition', 'target': 'instrument', 'action': 'send_calibration', 'data': {}, 'expect': 'calibrating'}, {'op': 'transition', 'target': 'instrument', 'action': 'calibrate', 'data': {'due_at': '2099-01-01', 'passed': True}, 'expect': 'active'}, {'op': 'create', 'as': 'calibration', 'kind': 'calibration', 'data': {'instrument_id': '{instrument}', 'requested_at': '2026-01-01'}}, {'op': 'transition', 'target': 'calibration', 'action': 'perform', 'data': {'result': 'passed', 'performed_at': '2026-01-02', 'uncertainty': 0.01, 'due_at': '2099-01-01'}, 'expect': 'passed'}, {'op': 'transition', 'target': 'calibration', 'action': 'approve', 'data': {'authorized_by': 'QA-1'}, 'expect': 'approved'}, {'op': 'create', 'as': 'method', 'kind': 'method', 'data': {'name': 'Assay-A', 'version': 'v1'}}, {'op': 'transition', 'target': 'method', 'action': 'validate_method', 'data': {'parameters': {'range': [0, 10]}, 'instrument_ids': ['{instrument}']}, 'expect': 'validated'}, {'op': 'create', 'as': 'result', 'kind': 'result', 'data': {'sample_id': 'S-1', 'measurement': 'initial'}}, {'op': 'transition', 'target': 'result', 'action': 'release', 'data': {'instrument_id': '{instrument}', 'method_id': '{method}', 'value': 4.2, 'unit': 'mg/L'}, 'expect': 'released'}]
+        steps = [{'op': 'create', 'as': 'instrument', 'kind': 'instrument', 'data': {'name': 'Analyzer', 'serial': 'A-1'}}, {'op': 'transition', 'target': 'instrument', 'action': 'send_calibration', 'data': {}, 'expect': 'calibrating'}, {'op': 'transition', 'target': 'instrument', 'action': 'calibrate', 'data': {'due_at': '2099-01-01', 'passed': True}, 'expect': 'active'}, {'op': 'create', 'as': 'calibration', 'kind': 'calibration', 'data': {'instrument_id': '{instrument}', 'requested_at': '2026-01-01'}}, {'op': 'transition', 'target': 'calibration', 'action': 'perform', 'data': {'result': 'passed', 'performed_at': '2026-01-02', 'uncertainty': 0.01, 'due_at': '2099-01-01'}, 'expect': 'passed'}, {'op': 'transition', 'target': 'calibration', 'action': 'approve', 'data': {'authorized_by': 'QA-1'}, 'expect': 'approved'}, {'op': 'transition', 'target': 'calibration', 'action': 'register_point', 'data': {'point': {'standard': 0, 'indicated': 0.0, 'uncertainty': 0.01, 'due_at': '2099-01-01'}}, 'expect': 'approved'}, {'op': 'transition', 'target': 'calibration', 'action': 'register_point', 'data': {'point': {'standard': 10, 'indicated': 10.1, 'uncertainty': 0.01, 'due_at': '2099-01-01'}}, 'expect': 'approved'}, {'op': 'create', 'as': 'method', 'kind': 'method', 'data': {'name': 'Assay-A', 'version': 'v1'}}, {'op': 'transition', 'target': 'method', 'action': 'validate_method', 'data': {'parameters': {'range': [0, 10]}, 'instrument_ids': ['{instrument}']}, 'expect': 'validated'}, {'op': 'create', 'as': 'result', 'kind': 'result', 'data': {'sample_id': 'S-1', 'measurement': 'initial'}}, {'op': 'transition', 'target': 'result', 'action': 'release', 'data': {'instrument_id': '{instrument}', 'method_id': '{method}', 'value': 4.2, 'unit': 'mg/L'}, 'expect': 'released'}]
         for step in steps:
             if step["op"] == "create":
                 entity = self.service.create(
@@ -52,6 +52,17 @@ class WorkflowTest(unittest.TestCase):
                 )
             if "expect" in step:
                 self.assertEqual(entity["status"], step["expect"])
+
+        calibration = self.service.get(created["calibration"])
+        self.assertEqual(len(calibration["data"]["points"]), 2)
+        self.assertEqual(entity["data"]["release_decision"], "released")
+        self.assertIsNone(entity["data"]["hold_reason"])
+        self.assertEqual(entity["data"]["original_value"], 4.2)
+        self.assertAlmostEqual(entity["data"]["correction"], -0.042, places=6)
+        self.assertAlmostEqual(entity["data"]["corrected_value"], 4.158, places=6)
+        adopted = entity["data"]["calibration_points"]
+        self.assertEqual(len(adopted), 2)
+        self.assertEqual(adopted[0]["calibration_id"], created["calibration"])
 
 
 if __name__ == "__main__":

@@ -24,7 +24,18 @@ python3 app.py --db ./data.db --port 8309
 
 ## 核心对象
 
-- `instrument`：仪器状态；`calibration`：校准记录；`method`：方法版本；`result`：检测结果。
+- `instrument`：仪器状态；`calibration`：校准记录（含逐点登记的校准点）；`method`：方法版本；`result`：检测结果。
+
+## 校准点登记
+
+- 校准记录`perform`通过（`passed`/`approved`）后，用`register_point`动作逐点登记校准点：`{"action":"register_point","data":{"point":{"standard":0,"indicated":0.02,"uncertainty":0.01,"due_at":"2027-09-30"}}}`，每点记录标准值、示值、扩展不确定度和到期日，登记不改变校准记录状态。
+- 重复送检会创建新的校准记录，旧记录及其校准点全部保留；未过期的旧点继续参与覆盖。
+
+## 放行修正
+
+- 放行结果（`release`）时，系统收集该仪器所有已通过校准记录中未到期的校准点，仅当测得值落在两个已校准点之间才允许通过。
+- 修正量按相邻两点的（标准值−示值）线性插值计算，响应数据包含`original_value`（原始值）、`correction`（修正量）、`corrected_value`（修正后数值）和`calibration_points`（采用的校准点，含来源校准记录）。
+- 校准点不足、测得值超出覆盖区间或校准过期时，结果保持`pending`状态，`hold_reason`字段说明原因；补足校准点后可重新放行。
 
 ## 主要接口
 
